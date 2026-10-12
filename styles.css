@@ -450,6 +450,7 @@ body[data-scene="camp"] #agent-chip, body[data-scene="bazaar"] #agent-chip { dis
 /* Firefox only — in Chromium the standard properties would override the styled bar below and bring back its arrows */
 @supports (-moz-appearance: none) {
   * { scrollbar-width: thin; scrollbar-color: rgba(217, 180, 106, 0.55) transparent; }
+  .book { scrollbar-color: rgba(122, 90, 48, 0.55) transparent; }
   }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
