@@ -1,0 +1,9 @@
+# secrets — API keys live here
+.env
+.env.*
+
+# local tooling and OS clutter
+.claude/settings.local.json
+*.log
+Thumbs.db
+.DS_Store

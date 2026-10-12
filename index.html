@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Oracle's Chamber</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="stage"></div>
+
+<div id="loader" class="overlay">Lighting the candles…</div>
+
+<!-- Title -->
+<div id="title" class="overlay">
+  <div class="eyebrow">A journey of self-exploration</div>
+  <h1>The Oracle's Chamber</h1>
+  <p>Seventy-eight cards. Your choices. A conversation with yourself — guided by Seraphine, Keeper of the Veil.</p>
+  <button id="begin" class="gold-btn" disabled>Enter the fair</button>
+  <div class="fine">Best with sound on · Seraphine speaks aloud</div>
+</div>
+
+<!-- HUD -->
+<div id="hud-left"><button id="btn-menu" class="ghost-btn" hidden>‹ Camp</button></div>
+<div id="hud"><button id="btn-skip" class="ghost-btn" hidden>Skip intro ›</button></div>
+<div id="prompt"></div>
+<div id="gpu"></div>
+
+<!-- Camp: floating tent labels (positioned over the 3D tents each frame) -->
+<div id="camp-labels" aria-label="Places in the camp"></div>
+<div id="agent-chip" class="agent-chip camp-only">Listening for Seraphine…</div>
+<div id="camp-hint" class="camp-only">Click a tent — or use ← → and Enter</div>
+<div id="fade"></div>
+
+<!-- Reading setup -->
+<section id="setup" class="side-panel wide" aria-label="Set up a reading">
+  <form id="setup-form">
+    <div class="eyebrow">A new reading</div>
+    <h2>Lay out the cards</h2>
+
+    <h3 class="step">Who is reading?</h3>
+    <div class="choice-row">
+      <button type="button" class="choice" data-mode="solo"><b>Just me</b><span>A self-exploration journey</span></button>
+      <button type="button" class="choice" data-mode="duo"><b>The two of us</b><span>Take turns at one screen</span></button>
+    </div>
+    <div id="setup-duo" class="duo" hidden>
+      <div class="names">
+        <label>First player<input id="p1" maxlength="24" placeholder="Name" autocomplete="off"></label>
+        <label>Second player<input id="p2" maxlength="24" placeholder="Name" autocomplete="off"></label>
+      </div>
+      <label class="toggle"><input type="checkbox" id="foreach"><span><b>Read for each other</b> — when a card belongs to one of you, the other says what they see in it first.</span></label>
+    </div>
+
+    <h3 class="step">Choose a spread</h3>
+    <div id="spreads" class="spreads"></div>
+    <p id="spread-positions" class="positions"></p>
+
+    <h3 class="step">Which cards?</h3>
+    <div class="choice-row">
+      <button type="button" class="choice" data-deck="major"><b>Major Arcana</b><span>22 great cards · the big themes</span></button>
+      <button type="button" class="choice" data-deck="full"><b>The full deck</b><span>All 78 · arcana and the four suits</span></button>
+    </div>
+    <label class="toggle"><input type="checkbox" id="reversals"><span><b>Allow reversed cards</b> — cards may land upside down, showing blocked or inward energy.</span></label>
+
+    <div class="actions">
+      <button type="button" class="ghost-btn" id="setup-back">‹ Back</button>
+      <button type="submit" class="gold-btn">Begin the reading</button>
+    </div>
+  </form>
+</section>
+
+<!-- Library -->
+<section id="library" class="library" aria-label="The Library of Cards">
+  <div class="lib-browse">
+    <header class="lib-head">
+      <div><div class="eyebrow">The Library of Cards</div><h2>Seventy-eight mirrors</h2></div>
+      <button class="ghost-btn" data-close>Close</button>
+    </header>
+    <div class="lib-tools">
+      <div id="lib-tabs" class="tabs"></div>
+      <input id="lib-search" type="search" placeholder="Search names or meanings…" autocomplete="off">
+    </div>
+    <div id="lib-guide" class="lib-guide" hidden></div>
+    <div id="lib-grid" class="lib-grid"></div>
+  </div>
+  <div class="lib-detail" hidden>
+    <div class="lib-info">
+      <div class="lib-nav">
+        <button class="ghost-btn" id="lib-back">‹ All cards</button>
+        <button class="ghost-btn" data-close>Close</button>
+      </div>
+      <div class="eyebrow" id="lib-sub"></div>
+      <h2 id="lib-name"></h2>
+      <div class="chips" id="lib-chips"></div>
+      <div class="lib-controls">
+        <button class="ghost-btn" id="lib-flip">Turn over</button>
+        <button class="ghost-btn" id="lib-rev">Show reversed</button>
+        <span class="hint">Drag the card to turn it</span>
+      </div>
+      <div id="lib-sections" class="lib-sections"></div>
+      <div class="lib-chat">
+        <h4>Ask Seraphine</h4>
+        <div id="lib-log" class="log" aria-live="polite"></div>
+        <div id="lib-suggest" class="suggest"></div>
+        <form id="lib-form" class="chat-form">
+          <input id="lib-input" maxlength="500" placeholder="Ask about this card…" autocomplete="off">
+          <button id="lib-send" class="gold-btn" type="submit">Ask</button>
+        </form>
+        <p id="lib-agent" class="agent-note" hidden></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- History -->
+<section id="history" class="side-panel" aria-label="Past readings">
+  <div class="eyebrow">Kept on this device</div>
+  <h2>Past readings</h2>
+  <div id="history-list" class="history-list"></div>
+  <div class="actions"><button class="ghost-btn" id="history-back">‹ Back</button></div>
+</section>
+
+<!-- Settings -->
+<section id="settings" class="side-panel" aria-label="Settings">
+  <div class="eyebrow">The chamber</div>
+  <h2>Settings</h2>
+  <label class="toggle"><input type="checkbox" id="set-voice"><span><b>Seraphine speaks aloud</b></span></label>
+  <label class="field" id="set-voice-row">Her voice<select id="set-voice-name"></select></label>
+  <label class="field">Speaking speed<input type="range" id="set-rate" min="0.8" max="1.2" step="0.05"></label>
+  <p class="note" id="set-voice-note"></p>
+  <button class="ghost-btn" id="set-test" type="button">Hear her voice</button>
+  <label class="toggle"><input type="checkbox" id="set-auto"><span><b>Move on by itself</b> — after she finishes a line, continue automatically. Enter, Space or a click always moves on sooner.</span></label>
+  <label class="field">Pause before moving on
+    <select id="set-auto-delay">
+      <option value="2">2 seconds</option>
+      <option value="2.5">2.5 seconds</option>
+      <option value="3">3 seconds</option>
+      <option value="4">4 seconds</option>
+    </select>
+  </label>
+  <label class="toggle"><input type="checkbox" id="set-sound"><span><b>Ambient sound and chimes</b></span></label>
+  <label class="field">Graphics
+    <select id="set-quality">
+      <option value="auto">Automatic (recommended)</option>
+      <option value="high">High — shadows, anti-aliasing, foil cards</option>
+      <option value="standard">Standard — lighter on the GPU</option>
+    </select>
+  </label>
+  <p class="note" id="set-gpu"></p>
+  <p class="note" id="set-quality-note" hidden>Takes effect after a reload. <button class="link" id="set-reload" type="button">Reload now</button></p>
+  <h3 class="step">Seraphine's mind</h3>
+  <p class="note" id="set-agent"></p>
+  <button class="ghost-btn" id="set-recheck" type="button">Check again</button>
+  <div class="actions"><button class="ghost-btn" id="settings-back">‹ Back</button></div>
+</section>
+
+<!-- Card meaning panel (during readings) -->
+<aside id="cardpanel" aria-live="polite">
+  <div class="pos"></div>
+  <div class="cname"></div>
+  <div class="chips"></div>
+  <div class="meaning"></div>
+</aside>
+
+<!-- Dialogue -->
+<div id="dialogue" role="dialog" aria-live="polite">
+  <div class="speaker">Seraphine · Keeper of the Veil</div>
+  <div id="dlg-text"></div>
+  <form id="dlg-ask" hidden>
+    <input id="dlg-input" autocomplete="off" maxlength="500">
+    <button class="ghost-btn" type="button" id="dlg-askq" title="Ask Seraphine a question about this card before you answer">Ask her</button>
+    <button class="gold-btn" type="submit">Offer</button>
+  </form>
+  <div id="dlg-next" hidden>Enter ▸</div>
+</div>
+
+<!-- Journal -->
+<div id="journal" class="overlay">
+  <div class="book">
+    <div class="eyebrow" id="j-date"></div>
+    <h2 id="j-title">Your Reflection</h2>
+    <p class="intent" id="j-intent"></p>
+    <div class="entries" id="j-entries"></div>
+    <p class="synthesis" id="j-synthesis" hidden></p>
+    <p class="thread" id="j-thread"></p>
+    <div class="actions">
+      <button class="gold-btn" id="j-again">Another reading</button>
+      <button class="ghost-btn" id="j-save">Save as text</button>
+      <button class="ghost-btn" id="j-delete" hidden>Delete</button>
+      <button class="ghost-btn" id="j-menu">Back</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
