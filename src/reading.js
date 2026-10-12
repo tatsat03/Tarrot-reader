@@ -1,6 +1,6 @@
 import { sleep, pickFrom } from './util.js';
 import { state } from './state.js';
-import { DECK, MAJORS, spreadById } from '../data/deck.js';
+import { DECK, MAJORS, SUITS, spreadById } from '../data/deck.js';
 import { ball, constellation } from './room.js';
 import { O, setOracleColor } from './oracle.js';
 import { setInPlay, stackDeck, shuffleDeck, layoutFan, fanCards, focusPose, slotPoses, moveCard, burst, ensureFront } from './cards.js';
@@ -8,7 +8,8 @@ import { beginFlow, say, ask, think, hideDialogue, setPrompt, showCardPanel, hid
 import { pickCard } from './input.js';
 import { sfx } from './audio.js';
 import { askDuringReading, reflectOnAnswers, closingWords } from './agent.js';
-import { saveHistory } from './journal.js';
+import { saveHistory, historyFor } from './journal.js';
+import { astro, isBirthday, profileBrief, timesDrawn } from './profiles.js';
 
 export const INTRO = [
   "Ah… there you are. Come in, come in. Sit. The candles have been waiting for you.",
@@ -33,24 +34,59 @@ const SILENT_ACKS = [
   "You needn't answer aloud. The question has already begun its work.",
 ];
 let ackIndex = Math.floor(Math.random() * ACKS.length);
+
+/* ---------- making it personal ---------- */
+const greeted = new Set(); // travelers Seraphine has already greeted this session
+function personalGreeting(p, duo) {
+  const a = astro(p), first = !greeted.has(p.id);
+  greeted.add(p.id);
+  if (isBirthday(p)) return `${p.name} — happy birthday. A reading on the day you were born is a rare thing; the cards tend to speak plainly.`;
+  if (first && a.sign && a.birthCards.length) {
+    return `${p.name}. A ${a.sign.name} sun — ${a.sign.element.toLowerCase()} in you — and by the old arithmetic of your birthday, your birth card is ${a.birthCards[0].name}. I'll be watching for it tonight.`;
+  }
+  if (first) return duo ? `And ${p.name}. Welcome.` : `${p.name}. Welcome back to my table.`;
+  return null;
+}
+// One small observation about a freshly turned card, if it means something to the person it belongs to.
+function personalNote(card, people, duo) {
+  for (const t of people) {
+    const p = t.profile;
+    if (!p) continue;
+    const a = astro(p), you = duo ? p.name : 'you', your = duo ? `${p.name}'s` : 'your';
+    if (a.birthCards.some((c) => c.id === card.id)) return `And look — this is ${your} birth card. When it turns up, the reading is speaking very directly to ${you}.`;
+    const times = timesDrawn(p, card.id, historyFor(p.id));
+    if (times > 0) return `${card.name} has come to ${you} ${times === 1 ? 'once before' : `${times} times before`}. A card that keeps returning is usually knocking for a reason.`;
+    if (a.sign && a.sign.card.id === card.id) return `${card.name} is the card of ${a.sign.name} — ${your} sun sign.`;
+    if (a.sign && card.suit && SUITS[card.suit].element === a.sign.element && Math.random() < 0.5) {
+      return `${SUITS[card.suit].name} are ${a.sign.element} — the same element as ${your} ${a.sign.name} sun.`;
+    }
+  }
+  return null;
+}
 let skipIntro = false;
 export const requestSkipIntro = () => { skipIntro = true; };
 
 /**
- * cfg: { mode: 'solo'|'duo', players: [A, B], forEach: bool, spread: id, deck: 'major'|'full', reversals: bool }
+ * cfg: { spread: id, deck: 'major'|'full', reversals: bool, forEach: bool,
+ *        travelers: [{ name, profile|null }] — one traveler, or two for a shared reading }
  * Resolves with the finished journal record; rejects with Aborted if the player leaves.
  */
 export async function runReading(cfg, { onIntro } = {}) {
   const F = beginFlow();
   const spread = spreadById(cfg.spread);
-  const duo = cfg.mode === 'duo';
-  const [A, B] = duo ? cfg.players : [null, null];
+  const travelers = cfg.travelers;
+  const duo = travelers.length === 2;
+  const [A, B] = duo ? travelers.map((t) => t.name) : [null, null];
+  const me = travelers[0];
   const n = spread.positions.length;
   const record = {
     id: Date.now().toString(36), date: new Date().toISOString(),
-    mode: cfg.mode, players: duo ? [A, B] : [], spreadId: spread.id, spreadName: spread.name,
+    mode: duo ? 'duo' : 'solo', players: duo ? [A, B] : [], profileIds: travelers.filter((t) => t.profile).map((t) => t.profile.id),
+    spreadId: spread.id, spreadName: spread.name,
     deck: cfg.deck, reversals: cfg.reversals, forEach: !!cfg.forEach, intent: '', entries: [], synthesis: '',
   };
+  // what Seraphine's mind knows about the people at the table (never saved with the journal)
+  record._ctx = { briefs: travelers.map((t) => (t.profile ? profileBrief(t.profile, historyFor(t.profile.id)) : `${t.name}: a guest — no personal details shared.`)) };
   const fill = (s) => s.replace(/\{A\}/g, A || 'you').replace(/\{B\}/g, B || 'them');
 
   // --- the table ---
@@ -72,6 +108,10 @@ export async function runReading(cfg, { onIntro } = {}) {
   } else {
     await say(pickFrom(RETURNING));
   }
+  for (const t of travelers) {
+    const line = t.profile && personalGreeting(t.profile, duo);
+    if (line) await say(line);
+  }
   if (duo) {
     await say(`Two of you tonight — ${A} and ${B}. Good. The cards are often kinder when someone we trust sits beside us.`);
     if (cfg.forEach) await say("And you'll read for each other. When a card belongs to one of you, the other will say what they see in it first.");
@@ -84,10 +124,11 @@ export async function runReading(cfg, { onIntro } = {}) {
     ? `We'll draw ${spread.name}: a single card.`
     : `We'll lay ${spread.name}: ${spread.positions.map((p) => p.title.toLowerCase()).join(', ')}.`);
 
+  const focus = (me.profile && me.profile.focus) || [];
   record.intent = await ask(
     duo ? `${A}, ${B} — what brings you here together tonight? Either of you may answer for both.`
-        : "Before we begin — what is on your mind tonight? A question, a feeling… even a single word is enough.",
-    'Your intention, or leave it blank…'
+        : `Before we begin${me.profile ? `, ${me.name}` : ''} — what is on your mind tonight? A question, a feeling… even a single word is enough.`,
+    focus.length ? `Your intention — perhaps something about ${focus.slice(0, 2).join(' or ').toLowerCase()}…` : 'Your intention, or leave it blank…'
   );
   await say(record.intent
     ? `“${record.intent}.” Good. Hold it gently — don't grip it. Now… watch the deck.`
@@ -161,6 +202,9 @@ export async function runReading(cfg, { onIntro } = {}) {
 
     await say(fill(duo && pos.duoIntro ? pos.duoIntro : pos.intro));
     await say(`${card.name}${reversed ? ', reversed' : ''}. ${reversed ? card.reversed : card.meaning}`);
+    const whose = !duo ? [me] : owner === 'a' ? [travelers[0]] : owner === 'b' ? [travelers[1]] : travelers;
+    const note = personalNote(card, whose, duo);
+    if (note) await say(note);
 
     const answers = [];
     const onQuestion = (asker) => (q) => askDuringReading(record, card, reversed, pos.title, q, asker);

@@ -3,12 +3,26 @@ import { cardById } from '../data/deck.js';
 import { cardThumb } from './textures.js';
 
 const KEY = 'oracle.history';
-export const listHistory = () => store.get(KEY, []);
+const allHistory = () => store.get(KEY, []);
+// A traveler's readings (older readings from before profiles existed show for everyone).
+export const listHistory = (profileId) => allHistory().filter((r) => !r.profileIds || (profileId && r.profileIds.includes(profileId)));
+export const historyFor = (profileId) => (profileId ? listHistory(profileId) : []);
+// Guests' readings are never stored; a reading is kept if any of its players has a profile.
 export function saveHistory(record) {
-  const all = [record, ...listHistory().filter((r) => r.id !== record.id)].slice(0, 50);
+  if (!record.profileIds || !record.profileIds.length) return false;
+  const { _ctx, ...clean } = record;
+  const all = [clean, ...allHistory().filter((r) => r.id !== record.id)].slice(0, 200);
   return store.set(KEY, all);
 }
-export function deleteHistory(id) { store.set(KEY, listHistory().filter((r) => r.id !== id)); }
+export function deleteHistory(id) { store.set(KEY, allHistory().filter((r) => r.id !== id)); }
+// When a profile is deleted, its readings go too (shared two-player readings stay for the other person).
+export function forgetProfile(profileId) {
+  store.set(KEY, allHistory().flatMap((r) => {
+    if (!r.profileIds || !r.profileIds.includes(profileId)) return [r];
+    const rest = r.profileIds.filter((id) => id !== profileId);
+    return rest.length ? [{ ...r, profileIds: rest }] : [];
+  }));
+}
 
 export function threadLine(r) {
   const k = r.entries.map((e) => cardById(e.cardId)?.keys[0].toLowerCase()).filter(Boolean);

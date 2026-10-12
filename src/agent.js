@@ -37,7 +37,13 @@ How you speak:
 Care:
 - Don't give medical, legal or financial directives; for serious matters, suggest talking to someone qualified.
 - If someone mentions wanting to harm themselves or being in danger, drop the role-play tone, respond with care, and encourage them to reach out to someone they trust or a local emergency or crisis line.
-- In two-player readings, be fair and kind to both people; never take sides or stir conflict between them.`;
+- In two-player readings, be fair and kind to both people; never take sides or stir conflict between them.
+
+Knowing your visitor:
+- You may be given a traveler's profile: name, pronouns, age, sun sign, life path number, tarot birth cards, what they hope to explore, and their recent readings. Weave these in lightly and naturally, the way a perceptive host remembers a regular — never recite them back like a file, and never treat astrology or numerology as fact about their character or fate.
+- Use their pronouns when referring to them.
+- If a card has appeared in their earlier readings, or is their birth card, you may notice it.
+- If the traveler is under 18, keep everything age-appropriate.`;
 
 function cardBrief(card, reversed) {
   const lines = [
@@ -76,8 +82,8 @@ async function call(system, messages) {
 }
 
 /* ---------- Library: open conversation about one card ---------- */
-export async function askAboutCard(card, history, question) {
-  const system = `${PERSONA}\n\nRight now the player is studying one card in the Library of Cards:\n${cardBrief(card, false)}`;
+export async function askAboutCard(card, history, question, traveler = '') {
+  const system = `${PERSONA}\n\nRight now the player is studying one card in the Library of Cards:\n${cardBrief(card, false)}${traveler ? `\n\nAbout the traveler:\n${traveler}` : ''}`;
   const messages = [...history, { role: 'user', content: question }];
   return (await call(system, messages)) || offlineCardAnswer(card, question);
 }
@@ -85,7 +91,8 @@ export async function askAboutCard(card, history, question) {
 /* ---------- During a reading ---------- */
 function readingContext(r) {
   const who = r.players && r.players.length === 2 ? `Two players: ${r.players[0]} and ${r.players[1]}.` : 'One player, reading for themselves.';
-  return `${who}\nSpread: ${r.spreadName}.\nTheir intention: ${r.intent ? `"${r.intent}"` : '(left unspoken)'}`;
+  const briefs = r._ctx && r._ctx.briefs && r._ctx.briefs.length ? `\n\nAbout the travelers:\n${r._ctx.briefs.join('\n\n')}` : '';
+  return `${who}\nSpread: ${r.spreadName}.\nTheir intention: ${r.intent ? `"${r.intent}"` : '(left unspoken)'}${briefs}`;
 }
 
 export async function askDuringReading(r, card, reversed, position, question, asker) {

@@ -54,8 +54,9 @@ export const sfx = (() => {
   function applyScene(ramp = 1.5) {
     if (!ctx) return;
     const t = ctx.currentTime;
-    droneBus.gain.setTargetAtTime(scene === 'chamber' ? 1 : 0.25, t, ramp);
-    campBus.gain.setTargetAtTime(scene === 'camp' ? 1 : 0, t, ramp);
+    // chamber: the drone; camp: night sounds; the big top: a little of both, muffled by canvas
+    droneBus.gain.setTargetAtTime(scene === 'chamber' ? 1 : scene === 'bazaar' ? 0.6 : 0.25, t, ramp);
+    campBus.gain.setTargetAtTime(scene === 'camp' ? 1 : scene === 'bazaar' ? 0.25 : 0, t, ramp);
   }
   function init() {
     if (ctx) return;

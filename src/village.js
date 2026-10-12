@@ -1,10 +1,9 @@
 import * as THREE from 'three';
-import { renderer, camera, HIGH, Y_AXIS } from './engine.js';
-import { glow, tween, easeInOut, el, $ } from './util.js';
+import { HIGH } from './engine.js';
+import { glow } from './util.js';
+import { createHub } from './hub.js';
 import { canvas, toTex, seeded, flameTexture } from './textures.js';
 import { softTex, sparkTex } from './room.js';
-import { state } from './state.js';
-import { sfx } from './audio.js';
 
 /* =====================================================================
    The camp — a moonlit carnival where each tent is a place to go.
@@ -22,13 +21,6 @@ export const SPOTS = [
 ];
 
 const OVERVIEW = { pos: new THREE.Vector3(0, 6.2, 14.5), look: new THREE.Vector3(0, 1.6, -3) };
-export const camp = {
-  camPos: new THREE.Vector3(0, 16, 34),
-  camLook: OVERVIEW.look.clone(),
-  hovered: null,
-  interactive: false,
-  onEnter: null,      // set by main: (spot) => void
-};
 function overview() {
   const asp = innerWidth / innerHeight;
   const k = asp < 1.2 ? 1 + (1.2 - asp) * 0.9 : 1;
@@ -36,7 +28,7 @@ function overview() {
 }
 
 /* ---------- textures ---------- */
-function stripeTexture(a, b, n) {
+export function stripeTexture(a, b, n) {
   const [c, ctx] = canvas(1024, 64);
   const w = 1024 / n;
   for (let i = 0; i < n; i++) {
@@ -344,7 +336,6 @@ function buildFire() {
 }
 
 /* ---------- place the spots ---------- */
-const hits = [];
 for (const s of SPOTS) {
   const built = s.kind === 'tent' ? buildTent(s) : s.kind === 'wagon' ? buildWagon(s) : buildFire();
   Object.assign(s, built);
@@ -360,12 +351,15 @@ for (const s of SPOTS) {
     s.light = fire.light;
   }
   s.baseLight = s.light.intensity;
-  s.glow = 0;
   const hit = new THREE.Mesh(new THREE.CylinderGeometry((s.r || 1.5) * 1.2, (s.r || 1.5) * 1.2, s.top.y + 0.4, 16), new THREE.MeshBasicMaterial({ visible: false }));
   hit.position.y = (s.top.y + 0.4) / 2;
-  hit.userData.spot = s;
   s.g.add(hit);
-  hits.push(hit);
+  s.hits = [hit];
+  s.onGlow = (g, t) => {
+    s.light.intensity = s.baseLight * (1 + g * 0.9) * (s.kind === 'fire' ? 0.85 + Math.sin(t * 13) * 0.08 + Math.sin(t * 7.3) * 0.07 : 1);
+    if (s.glowMat) s.glowMat.color.copy(glow(0xffd8a0, 1.4 + g * 1.2 + Math.sin(t * 2 + s.x) * 0.08));
+    if (s.emblem) s.emblem.scale.setScalar(1 + g * 0.12);
+  };
   // camera stop in front of the entrance
   const dir = new THREE.Vector3(-s.x, 0, -s.z);
   if (dir.lengthSq() < 0.01) dir.set(0, 0, 1);
@@ -375,7 +369,6 @@ for (const s of SPOTS) {
     pos: new THREE.Vector3(s.x, 0, s.z).addScaledVector(dir, reach).setY(s.kind === 'fire' ? 2.6 : 2.1),
     look: new THREE.Vector3(s.x, s.doorY + (s.kind === 'fire' ? 0.2 : 0.4), s.z),
   };
-  s.anchor = new THREE.Vector3();
 }
 
 /* ---------- strings of bulbs between tent tops and poles ---------- */
@@ -404,7 +397,6 @@ for (const s of SPOTS) {
   const m = new THREE.Matrix4(), c = new THREE.Color();
   bulbs.forEach((p, i) => { m.makeTranslation(p.x, p.y, p.z); inst.setMatrixAt(i, m); inst.setColorAt(i, c.set(palette[i % palette.length]).multiplyScalar(2.6)); });
   village.add(inst);
-  camp.bulbs = { inst, count: bulbs.length, palette };
 }
 
 /* ---------- lantern posts, trees, Ferris wheel, fireflies ---------- */
@@ -467,104 +459,22 @@ if (HIGH) village.traverse((o) => {
 });
 
 /* =====================================================================
-   Labels (HTML, so they stay crisp and keyboard-focusable)
+   The hub: labels, picking and camera moves (shared with the big top)
    ===================================================================== */
-const labelBox = $('camp-labels');
-for (const s of SPOTS) {
-  const b = el('button', 'camp-label');
-  b.append(el('span', 'cl-name', s.name), el('span', 'cl-sub', s.sub));
-  b.onclick = () => enterSpot(s);
-  b.onmouseenter = () => setHover(s);
-  b.onmouseleave = () => setHover(null);
-  b.onfocus = () => setHover(s);
-  b.onblur = () => setHover(null);
-  labelBox.append(b);
-  s.label = b;
-}
-export function setSub(id, text) { const s = SPOTS.find((q) => q.id === id); if (s) s.label.querySelector('.cl-sub').textContent = text; }
-function setHover(s) {
-  if (camp.hovered === s) return;
-  camp.hovered = s;
-  if (s) sfx.hover();
-  for (const q of SPOTS) q.label.classList.toggle('hover', q === s);
-}
-export function showLabels(on) { labelBox.classList.toggle('show', on); }
-
-/* =====================================================================
-   Pointer and keyboard
-   ===================================================================== */
-const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
-function pick(e) {
-  ndc.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
-  ray.setFromCamera(ndc, camera);
-  const h = ray.intersectObjects(hits, false)[0];
-  return h ? h.object.userData.spot : null;
-}
-const cv = renderer.domElement;
-cv.addEventListener('pointermove', (e) => {
-  if (state.scene !== 'camp' || !camp.interactive) return;
-  const s = pick(e);
-  setHover(s);
-  cv.style.cursor = s ? 'pointer' : 'default';
-});
-cv.addEventListener('click', (e) => {
-  if (state.scene !== 'camp' || !camp.interactive) return;
-  const s = pick(e);
-  if (s) enterSpot(s);
-});
-addEventListener('keydown', (e) => {
-  if (state.scene !== 'camp' || !camp.interactive) return;
-  if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
-  const order = ['library', 'oracle', 'memories', 'settings', 'intro'].map((id) => SPOTS.find((s) => s.id === id));
-  const i = order.indexOf(camp.hovered);
-  const next = order[(i + (e.key === 'ArrowRight' ? 1 : order.length - 1) + (i < 0 ? 1 : 0)) % order.length];
-  next.label.focus();
-  e.preventDefault();
-});
-
-function enterSpot(s) {
-  if (!camp.interactive) return;
-  sfx.tick();
-  camp.onEnter && camp.onEnter(s);
-}
-
-/* =====================================================================
-   Camera moves
-   ===================================================================== */
-export function flyTo(target, duration = 1.6) {
-  const to = target === 'overview' ? overview() : target.view;
-  const p0 = camp.camPos.clone(), l0 = camp.camLook.clone();
-  return tween({ duration, ease: easeInOut, onUpdate: (k) => { camp.camPos.lerpVectors(p0, to.pos, k); camp.camLook.lerpVectors(l0, to.look, k); } });
-}
+export const camp = createHub({ name: 'camp', spots: SPOTS, overview, order: ['library', 'oracle', 'memories', 'settings', 'intro'] });
+// The first approach: from high above the treeline down to the camp.
 export function arrive() {
   const o = overview();
   camp.camPos.set(o.pos.x, o.pos.y + 10, o.pos.z + 20);
   camp.camLook.copy(o.look);
-  return flyTo('overview', 4.2);
+  return camp.flyTo('overview', 4.2);
 }
-export function placeAt(target) {
-  const to = target === 'overview' ? overview() : target.view;
-  camp.camPos.copy(to.pos); camp.camLook.copy(to.look);
-}
-export const spotById = (id) => SPOTS.find((s) => s.id === id);
 
 /* =====================================================================
    Per-frame
    ===================================================================== */
-const _p = new THREE.Vector3();
 export function updateVillage(t, dt) {
-  for (const s of SPOTS) {
-    s.glow += ((camp.hovered === s ? 1 : 0) - s.glow) * Math.min(1, dt * 6);
-    s.light.intensity = s.baseLight * (1 + s.glow * 0.9) * (s.kind === 'fire' ? 0.85 + Math.sin(t * 13) * 0.08 + Math.sin(t * 7.3) * 0.07 : 1);
-    if (s.glowMat) s.glowMat.color.copy(glow(0xffd8a0, 1.4 + s.glow * 1.2 + Math.sin(t * 2 + s.x) * 0.08));
-    if (s.emblem) s.emblem.scale.setScalar(1 + s.glow * 0.12);
-    // label position
-    s.g.localToWorld(_p.copy(s.top));
-    _p.project(camera);
-    const vis = _p.z < 1 && Math.abs(_p.x) < 1.15 && Math.abs(_p.y) < 1.15;
-    s.label.style.opacity = vis ? '' : '0';
-    s.label.style.transform = `translate(${((_p.x + 1) / 2) * innerWidth}px, ${((1 - _p.y) / 2) * innerHeight}px) translate(-50%, -100%)`;
-  }
+  camp.update(t, dt);
   for (const f of fire.flames) {
     const k = 0.85 + Math.sin(t * 9 + f.phase) * 0.12 + Math.sin(t * 23 + f.phase) * 0.06;
     f.f.scale.set(0.55 * f.s * k, 1.2 * f.s * k, 1);

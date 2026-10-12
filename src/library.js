@@ -8,6 +8,8 @@ import { O, setOracleColor } from './oracle.js';
 import { ball } from './room.js';
 import { voice, sfx } from './audio.js';
 import { askAboutCard, agentStatus } from './agent.js';
+import { currentProfile, profileBrief } from './profiles.js';
+import { historyFor } from './journal.js';
 
 const GUIDE = [
   ['What is tarot?', "Tarot is a deck of 78 illustrated cards. It began in fifteenth-century Italy as a card game called tarocchi; only in the 1700s did people start reading the cards for meaning. Most modern decks follow the Rider–Waite–Smith cards, painted by Pamela Colman Smith in 1909. In this chamber, the cards are a mirror: each one is a prompt to notice something about yourself, not a prediction."],
@@ -116,7 +118,8 @@ async function send(text) {
   O.thinking = true;
   sfx.tick();
   let reply;
-  try { reply = await askAboutCard(card, hist.slice(-12), q); }
+  const me = currentProfile();
+  try { reply = await askAboutCard(card, hist.slice(-12), q, me ? profileBrief(me, historyFor(me.id)) : ''); }
   finally { O.thinking = false; $('lib-send').disabled = false; }
   hist.push({ role: 'user', content: q }, { role: 'assistant', content: reply });
   if (current !== card) return;

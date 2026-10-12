@@ -188,7 +188,7 @@ export const hideCardPanel = () => panel.classList.remove('show');
 /* =====================================================================
    Overlays
    ===================================================================== */
-const OVERLAYS = ['setup', 'library', 'journal', 'history', 'settings'];
+const OVERLAYS = ['stall', 'library', 'journal', 'history', 'settings', 'profiles', 'profile-edit'];
 export function showOverlay(id) {
   for (const o of OVERLAYS) $(o).classList.toggle('show', o === id);
 }
